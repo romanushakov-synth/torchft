@@ -43,17 +43,25 @@ def get_stream_context(
         return nullcontext()
 
 
-def record_event() -> None:
+def record_event() -> Union[torch.cuda.Event, torch.xpu.Event]:
     """
-    Record an event in the current stream.
+    Record an event in the current stream and RETURN it.
 
     This function provides a unified way to record events across different
     accelerator types (CUDA, XPU).
+
+    Returning the event is the whole point: every caller sends it to another process so that
+    process can wait on this stream's work. The CUDA event is created ``interprocess=True`` for
+    exactly that reason.
     """
     if torch.xpu.is_available():
-        torch.xpu.current_stream().record_event(torch.xpu.Event())
-    else:
-        torch.cuda.current_stream().record_event(torch.cuda.Event(interprocess=True))
+        xpu_event = torch.xpu.Event()
+        torch.xpu.current_stream().record_event(xpu_event)
+        return xpu_event
+
+    cuda_event = torch.cuda.Event(interprocess=True)
+    torch.cuda.current_stream().record_event(cuda_event)
+    return cuda_event
 
 
 def synchronize() -> None:
